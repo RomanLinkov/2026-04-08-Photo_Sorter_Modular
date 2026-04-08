@@ -1,6 +1,8 @@
 # Папки кэша и мусора (со слешем в конце)
 /.photo_cache/
 /.photo_trash/
+dist/.photo_cache/
+dist/.photo_trash/
 
 # Системные папки Python
 __pycache__/
