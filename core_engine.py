@@ -35,10 +35,23 @@ class PhotoEngine:
             return self.thumb_cache.get(fname)
 
     def request_thumb(self, fname):
-        # Если в очереди больше 40 задач, притормаживаем
-        if self.get_queue_size() < 40:
+        """Загрузка превью с защитой от перегрузки очереди"""
+        current_load = self.get_queue_size()
+        
+        # Если в очереди уже больше 60 задач, новые пока не принимаем
+        if current_load < 60:
             self.executor.submit(self._proc_thumb, fname)
 
+
+    def precache_all(self, files):
+        """Закидывает всю папку в очередь на фоновую загрузку миниатюр"""
+        for fname in files:
+            # Проверяем, нет ли уже этого файла в RAM-кэше
+            with self.lock:
+                if fname in self.thumb_cache:
+                    continue
+            # Постепенно наполняем пул потоков
+            self.executor.submit(self._proc_thumb, fname)
 
 
 

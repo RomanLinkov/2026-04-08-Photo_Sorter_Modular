@@ -12,8 +12,7 @@ __pycache__/
 # Настройки и документация
 photo_sorter_settings.json
 build/
-PhotoSorterPro.spec
-PhotoSorterPro_2.0.spec
+*.spec
 
 # Личные заметки
 all_modules.md

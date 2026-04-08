@@ -33,8 +33,15 @@ def start_main(config):
     PhotoSorterApp(root, config, engine)
 
 if __name__ == "__main__":
-    # Подготовка системных папок (.photo_cache и .photo_trash)
+    # Импортируем новую функцию cleanup_cache_smart
+    from data_config import ensure_dirs, cleanup_cache_smart
+    
+    # 1. Создаем необходимые папки (.photo_cache и .photo_trash)
     ensure_dirs()
+    
+    # 2. Умная очистка: удалит файлы старше 7 дней.
+    # Если кэш всё равно больше 0.5 ГБ — удалит самые старые до этого лимита.
+    cleanup_cache_smart(days_limit=7, max_gb=0.5)
     
     root = tk.Tk()
     root.title("Photo Sorter Pro")

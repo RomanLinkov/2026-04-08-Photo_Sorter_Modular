@@ -134,14 +134,40 @@ class PhotoSorterApp:
             self.root.after(0, self._on_files_loaded, [])
 
     def _on_files_loaded(self, files):
+        """Вызывается в главном потоке, когда список файлов готов"""
         self.files = files
+        
         if not self.files:
-            self.main_label.config(text="Папка пуста", image="")
+            # Если папка пуста
+            self.main_label.config(text="Папка пуста или не содержит фото", image="")
             self.fname_label.config(text="")
+            self.filmstrip._clear_all()
         else:
+            # 1. Устанавливаем начальные индексы
             self.current_idx = 0
             self.selected_indices = {0}
+            
+            # 2. ЗАПУСКАЕМ ФОНОВОЕ КЭШИРОВАНИЕ ВСЕЙ ПАПКИ
+            # Мы запускаем это в отдельном потоке, чтобы само создание очереди задач 
+            # не подтормаживало интерфейс при очень больших списках (1000+ фото)
+            threading.Thread(
+                target=self.engine.precache_all, 
+                args=(self.files,), 
+                daemon=True
+            ).start()
+            
+            # 3. Обновляем интерфейс (показываем первое фото и ленту)
             self.refresh_ui()
+            
+            # Принудительно проталкиваем обновление заголовка и текста
+            display_text = f"[{self.current_idx + 1} / {len(self.files)}] {self.files[self.current_idx]}"
+            self.fname_label.config(text=display_text)
+            self.root.title(f"Photo Sorter Pro 2.1 | {display_text}")
+
+        # Убираем возможные "зависшие" надписи
+        self.root.update_idletasks()
+
+
 
     def undo_last_action(self):
         if not self.history: return
@@ -168,34 +194,29 @@ class PhotoSorterApp:
             if f != current_fname:
                 self.engine.executor.submit(self.engine.save_rotation_to_disk, f)
 
+
     def navigate(self, step):
         if not self.files: return
-        import time
         self._save_previous_rotations()
         
         self.current_idx = (self.current_idx + step) % len(self.files)
         self.selected_indices = {self.current_idx}
         
-        # Обновляем текст в панели мгновенно
+        # 1. Мгновенно обновляем текст и заголовок
         display_text = f"[{self.current_idx + 1} / {len(self.files)}] — {self.files[self.current_idx]}"
         self.fname_label.config(text=display_text)
-        self.fname_label.update_idletasks() # Проталкиваем текст в GUI
+        self.root.title(f"Photo Sorter Pro 2.1 | {display_text}")
 
-        # Умная задержка для тяжелого фото
-        now = time.time()
-        is_fast = (now - self.last_nav_time) < 0.15 # Чуть уменьшили порог
-        self.last_nav_time = now
+        # 2. Обновляем ленту
+        self.filmstrip.refresh(self.files, self.current_idx, self.selected_indices, self.root.winfo_width())
 
+        # 3. АНТИ-ФРИЗ: Большое фото грузим ТОЛЬКО после паузы в 150мс
         if hasattr(self, '_nav_after_id'):
             self.root.after_cancel(self._nav_after_id)
+        
+        # Если "летим", main_label не трогаем, чтобы не вешать поток
+        self._nav_after_id = self.root.after(150, self.show_current)
 
-        if is_fast:
-            # При "пролете" не грузим фото, только обновляем ленту
-            self.filmstrip.refresh(self.files, self.current_idx, self.selected_indices, self.root.winfo_width())
-            self._nav_after_id = self.root.after(70, self.show_current)
-        else:
-            # Одиночный клик - грузим всё сразу
-            self.refresh_ui()
 
 
 
