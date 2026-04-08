@@ -35,7 +35,12 @@ class PhotoEngine:
             return self.thumb_cache.get(fname)
 
     def request_thumb(self, fname):
-        self.executor.submit(self._proc_thumb, fname)
+        # Если в очереди больше 40 задач, притормаживаем
+        if self.get_queue_size() < 40:
+            self.executor.submit(self._proc_thumb, fname)
+
+
+
 
     def _proc_thumb(self, fname):
         with self.lock:
@@ -45,38 +50,41 @@ class PhotoEngine:
 
         cache_path = self._get_cache_path(fname)
         path = os.path.join(self.current_source, fname)
-        img = None
+        img_to_show = None
         
         try:
+            # Пытаемся открыть из кэша
             if os.path.exists(cache_path):
                 try:
-                    img = Image.open(cache_path)
-                    img.load()
+                    with Image.open(cache_path) as cached_img:
+                        img_to_show = cached_img.copy() # Копируем в память и СРАЗУ закрываем файл
+                        img_to_show.load()
                 except:
-                    img = None
-                    if os.path.exists(cache_path): os.remove(cache_path)
+                    img_to_show = None
+                    try: os.remove(cache_path)
+                    except: pass # Если файл занят, просто пропустим удаление в этот раз
 
-            if img is None:
+            # Если кэша нет - создаем
+            if img_to_show is None:
                 with Image.open(path) as original:
                     original.draft('RGB', (THUMB_SIZE, THUMB_SIZE))
-                    img = ImageOps.exif_transpose(original)
-                    img.thumbnail((THUMB_SIZE, THUMB_SIZE), Image.Resampling.LANCZOS)
-                    img.save(cache_path, "PNG")
+                    img_to_show = ImageOps.exif_transpose(original)
+                    img_to_show.thumbnail((THUMB_SIZE, THUMB_SIZE), Image.Resampling.LANCZOS)
+                    img_to_show.save(cache_path, "PNG")
             
-            # Применяем поворот из памяти для ленты
+            # Поворот в памяти
             angle = self.rotation_map.get(fname, 0)
             if angle != 0:
-                img = img.rotate(angle, expand=True)
+                img_to_show = img_to_show.rotate(angle, expand=True)
 
-            photo = ImageTk.PhotoImage(img)
+            photo = ImageTk.PhotoImage(img_to_show)
             with self.lock:
                 self.thumb_cache[fname] = photo
             self.result_queue.put(fname)
 
         except Exception as e:
             print(f"Ошибка миниатюры {fname}: {e}")
-        finally:
-            if img: img.close()
+
 
     def rotate_in_memory(self, fname):
         """Мгновенный поворот в памяти"""
@@ -116,3 +124,11 @@ class PhotoEngine:
                 for f in filenames: self.thumb_cache.pop(f, None)
             else:
                 self.thumb_cache.clear()
+
+    def get_queue_size(self):
+        """Возвращает количество задач в очереди пула потоков"""
+        try:
+            # Обращаемся к внутренней очереди исполнителя
+            return self.executor._work_queue.qsize()
+        except:
+            return 0

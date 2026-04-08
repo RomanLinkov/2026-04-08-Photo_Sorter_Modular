@@ -47,7 +47,9 @@ class PhotoSorterApp:
         self.selected_indices = {0}
         self.files = []
         self.current_photo_tk = None
-        self.history = [] # Стек для отмены действий (Undo)
+        self.history = []
+        self.last_nav_time = 0  # Для умной задержки
+
         
         self.engine.current_source = self.config.get('source', '')
         
@@ -61,64 +63,66 @@ class PhotoSorterApp:
 
     def _init_ui(self):
         self.root.columnconfigure(0, weight=1)
-        self.root.rowconfigure(0, weight=1)
+        self.root.rowconfigure(1, weight=1)
 
-        self.main_label = tk.Label(self.root, bg="#121212", text="Загрузка...", fg="white")
-        self.main_label.grid(row=0, column=0, sticky="nsew")
+        # ВЕРХНЯЯ ИНФО-ПАНЕЛЬ
+        self.info_panel = tk.Frame(self.root, bg="#1a1a1a", height=30)
+        self.info_panel.grid(row=0, column=0, sticky="ew")
+        self.info_panel.pack_propagate(False)
+        
+        self.fname_label = tk.Label(self.info_panel, text="", fg="#00e5ff", bg="#1a1a1a", 
+                                    font=("Consolas", 10, "bold"))
+        self.fname_label.pack(side=tk.LEFT, padx=10)
 
-        self.prog_frame = tk.Frame(self.root, height=3, bg="#222222")
-        self.prog_frame.grid(row=1, column=0, sticky="ew")
-        self.prog_bar = tk.Frame(self.prog_frame, bg="#00e5ff", width=0, height=3)
+        self.cache_stat = tk.Label(self.info_panel, text="✓ READY", fg="#00e5ff", 
+                                   bg="#1a1a1a", font=("Consolas", 9, "bold"), width=15)
+        self.cache_stat.pack(side=tk.RIGHT, padx=10)
+
+        # Главная область просмотра
+        self.main_label = tk.Label(self.root, bg="#121212", text="") # Добавили text=""
+        self.main_label.grid(row=1, column=0, sticky="nsew")
+
+
+        # Полоска прогресса
+        self.prog_frame = tk.Frame(self.root, height=2, bg="#222222")
+        self.prog_frame.grid(row=2, column=0, sticky="ew")
+        self.prog_bar = tk.Frame(self.prog_frame, bg="#00e5ff", width=0, height=2)
         self.prog_bar.place(x=0, y=0)
         
         self.filmstrip = PhotoFilmstrip(self.root, self.engine, self.on_thumb_click)
-        
-        self.ctrl = tk.Frame(self.root, bg="#eeeeee", pady=10)
-        self.ctrl.grid(row=3, column=0, sticky="ew")
+
+        # Панель управления
+        self.ctrl = tk.Frame(self.root, bg="#eeeeee", pady=5)
+        self.ctrl.grid(row=4, column=0, sticky="ew")
         
         self.btn_l = tk.Frame(self.ctrl, bg="#eeeeee")
         self.btn_l.pack(side=tk.LEFT, padx=10)
         
-        tk.Button(self.btn_l, text="⚙", font=("Arial", 12), width=3, command=self.open_settings, bg="#e0e0e0").pack(side=tk.LEFT, padx=5)
-        tk.Button(self.btn_l, text="⤺ Undo", command=self.undo_last_action, bg="#fff3e0").pack(side=tk.LEFT, padx=5)
-        tk.Button(self.btn_l, text="◀", width=5, command=lambda: self.navigate(-1)).pack(side=tk.LEFT, padx=2)
-        tk.Button(self.btn_l, text="▶", width=5, command=lambda: self.navigate(1)).pack(side=tk.LEFT, padx=2)
+        tk.Button(self.btn_l, text="⚙", command=self.open_settings).pack(side=tk.LEFT, padx=2)
+        tk.Button(self.btn_l, text="⤺ Undo", command=self.undo_last_action).pack(side=tk.LEFT, padx=2)
+        tk.Button(self.btn_l, text="◀", command=lambda: self.navigate(-1)).pack(side=tk.LEFT, padx=2)
+        tk.Button(self.btn_l, text="▶", command=lambda: self.navigate(1)).pack(side=tk.LEFT, padx=2)
         tk.Button(self.btn_l, text="↩ Поворот (R)", command=self.rotate_current).pack(side=tk.LEFT, padx=10)
         tk.Button(self.btn_l, text="🗑 Удалить", fg="red", command=self.delete_files).pack(side=tk.LEFT, padx=2)
 
         self.btn_r = tk.Frame(self.ctrl, bg="#eeeeee")
         self.btn_r.pack(side=tk.RIGHT, padx=10)
-        
         self.btns_container = tk.Frame(self.btn_r, bg="#eeeeee")
         self.btns_container.pack(side=tk.LEFT)
-        
         self.refresh_buttons()
 
     def _bind_keys(self):
-        # Стрелки навигации
         self.root.bind("<Left>", lambda e: self.navigate(-1))
         self.root.bind("<Right>", lambda e: self.navigate(1))
-        
-        # Удаление
         self.root.bind("<Delete>", lambda e: self.delete_files())
-        
-        # Универсальная привязка Ctrl+Z (Отмена)
-        # Привязываем к латинской 'z' в обоих регистрах. 
-        # В большинстве систем Windows это перехватывает нажатие и в русской раскладке.
         self.root.bind("<Control-z>", lambda e: self.undo_last_action())
         self.root.bind("<Control-Z>", lambda e: self.undo_last_action())
-        
-        # Поворот (поддержка обеих раскладок)
         self.root.bind("r", lambda e: self.rotate_current())
         self.root.bind("R", lambda e: self.rotate_current())
         self.root.bind("к", lambda e: self.rotate_current())
         self.root.bind("К", lambda e: self.rotate_current())
-        
-        # Цифровые клавиши 1-6 для перемещения
         for i in range(1, 7):
             self.root.bind(str(i), lambda e, x=i: self.move_action(x))
-            
-        # Отслеживание изменения размера окна
         self.root.bind("<Configure>", lambda e: self.root.after(100, self.refresh_ui) if e.widget == self.root else None)
 
     def _async_load_files(self):
@@ -133,33 +137,26 @@ class PhotoSorterApp:
         self.files = files
         if not self.files:
             self.main_label.config(text="Папка пуста", image="")
+            self.fname_label.config(text="")
         else:
             self.current_idx = 0
             self.selected_indices = {0}
             self.refresh_ui()
 
     def undo_last_action(self):
-        if not self.history:
-            return
-            
+        if not self.history: return
         action = self.history.pop()
         restored = []
-        
         for old_path, new_path, fname in action['items']:
             try:
                 if os.path.exists(new_path):
                     shutil.move(new_path, old_path)
                     restored.append(fname)
-            except Exception as e:
-                print(f"Undo error {fname}: {e}")
-        
+            except: pass
         if restored:
             self.files.extend(restored)
             self.files.sort()
-            try:
-                self.current_idx = self.files.index(restored[0])
-            except:
-                self.current_idx = 0
+            self.current_idx = self.files.index(restored[0])
             self.selected_indices = {self.current_idx}
             self._after_file_list_change()
 
@@ -173,17 +170,77 @@ class PhotoSorterApp:
 
     def navigate(self, step):
         if not self.files: return
+        import time
         self._save_previous_rotations()
+        
         self.current_idx = (self.current_idx + step) % len(self.files)
         self.selected_indices = {self.current_idx}
-        self.refresh_ui()
+        
+        # Обновляем текст в панели мгновенно
+        display_text = f"[{self.current_idx + 1} / {len(self.files)}] — {self.files[self.current_idx]}"
+        self.fname_label.config(text=display_text)
+        self.fname_label.update_idletasks() # Проталкиваем текст в GUI
+
+        # Умная задержка для тяжелого фото
+        now = time.time()
+        is_fast = (now - self.last_nav_time) < 0.15 # Чуть уменьшили порог
+        self.last_nav_time = now
+
+        if hasattr(self, '_nav_after_id'):
+            self.root.after_cancel(self._nav_after_id)
+
+        if is_fast:
+            # При "пролете" не грузим фото, только обновляем ленту
+            self.filmstrip.refresh(self.files, self.current_idx, self.selected_indices, self.root.winfo_width())
+            self._nav_after_id = self.root.after(70, self.show_current)
+        else:
+            # Одиночный клик - грузим всё сразу
+            self.refresh_ui()
+
+
+
+
+    def _check_queue(self):
+        # 1. Получаем нагрузку
+        q_size = self.engine.get_queue_size()
+        
+        # 2. Мгновенно обновляем текст счётчика
+        if q_size > 0:
+            self.cache_stat.config(text=f"⚙ LOAD: {q_size}", fg="#ff9800")
+        else:
+            self.cache_stat.config(text="✓ READY", fg="#00e5ff")
+        
+        # ПРИНУДИТЕЛЬНОЕ ОБНОВЛЕНИЕ ЭКРАНА (чтобы счётчик не замерзал)
+        self.cache_stat.update_idletasks()
+
+        # 3. Обработка готовых миниатюр
+        updated = False
+        while not self.engine.result_queue.empty():
+            try:
+                self.engine.result_queue.get_nowait()
+                updated = True
+            except: break
+        
+        if updated: 
+            self.filmstrip.refresh(self.files, self.current_idx, self.selected_indices, self.root.winfo_width())
+        
+        # 4. Прогресс-бар
+        if self.files and self.root.winfo_width() > 10:
+            progress = (self.current_idx + 1) / len(self.files)
+            try: self.prog_bar.config(width=int(self.root.winfo_width() * progress))
+            except: pass
+
+        # Ставим интервал 50мс для максимальной отзывчивости
+        self.root.after(50, self._check_queue)
+
+
 
     def on_thumb_click(self, idx, state):
         self._save_previous_rotations()
-        if state & 0x0001: # Shift
+        if state & 0x0001: 
             start, end = min(self.current_idx, idx), max(self.current_idx, idx)
             for i in range(start, end + 1): self.selected_indices.add(i)
-        elif state & 0x0004: # Ctrl
+        elif state & 0x0004: 
             if idx in self.selected_indices: self.selected_indices.remove(idx)
             else: self.selected_indices.add(idx)
         else:
@@ -203,6 +260,18 @@ class PhotoSorterApp:
         fname = self.files[self.current_idx]
         path = os.path.join(self.config['source'], fname)
         
+        # Инфо-текст (номер и имя)
+        display_text = f"[{self.current_idx + 1} / {len(self.files)}] — {fname}"
+        
+        # Выводим инфо ТОЛЬКО в черную панель над фото
+        self.fname_label.config(text=display_text)
+        
+        # Заголовок окна теперь всегда чистый и статичный
+        self.root.title("Photo Sorter Pro 2.1")
+        
+        # Очищаем текст в центре (чтобы не было дублей)
+        self.main_label.config(text="") 
+
         def load_full():
             try:
                 with Image.open(path) as img:
@@ -210,21 +279,26 @@ class PhotoSorterApp:
                     angle = self.engine.rotation_map.get(fname, 0)
                     if angle != 0:
                         img = img.rotate(angle, expand=True)
+                    
                     w, h = max(100, self.main_label.winfo_width()), max(100, self.main_label.winfo_height())
                     img.thumbnail((w, h), Image.Resampling.LANCZOS)
                     self.current_photo_tk = ImageTk.PhotoImage(img)
+                    
+                    # Устанавливаем фото, текст принудительно пустой
                     self.main_label.config(image=self.current_photo_tk, text="")
             except:
                 self.main_label.config(text="Ошибка загрузки", image="")
+        
         threading.Thread(target=load_full, daemon=True).start()
+
+
+
 
     def move_action(self, folder_num):
         dest_path = self.config.get(f"dest{folder_num}")
         if not dest_path or not self.files: return
-        
         to_move = [self.files[i] for i in sorted(self.selected_indices, reverse=True) if i < len(self.files)]
         history_item = {'type': 'move', 'items': []}
-
         for fname in to_move:
             src = os.path.join(self.config['source'], fname)
             dst = os.path.join(dest_path, fname)
@@ -234,20 +308,16 @@ class PhotoSorterApp:
                 history_item['items'].append((src, dst, fname))
                 self.files.remove(fname)
             except: pass
-        
-        if history_item['items']:
-            self.history.append(history_item)
+        if history_item['items']: self.history.append(history_item)
         self._after_file_list_change()
 
     def delete_files(self):
         if not self.selected_indices or not self.files: return
-        
+        if not messagebox.askyesno("Удаление", "Удалить выбранные?"): return
         to_delete = [self.files[i] for i in sorted(self.selected_indices, reverse=True) if i < len(self.files)]
         trash_path = os.path.abspath(TRASH_DIR)
         if not os.path.exists(trash_path): os.makedirs(trash_path)
-        
         history_item = {'type': 'delete', 'items': []}
-
         for fname in to_delete:
             src = os.path.join(self.config['source'], fname)
             dst = os.path.join(trash_path, fname)
@@ -257,9 +327,7 @@ class PhotoSorterApp:
                 history_item['items'].append((src, dst, fname))
                 self.files.remove(fname)
             except: pass
-            
-        if history_item['items']:
-            self.history.append(history_item)
+        if history_item['items']: self.history.append(history_item)
         self._after_file_list_change()
 
     def _after_file_list_change(self):
@@ -268,6 +336,7 @@ class PhotoSorterApp:
         if not self.files:
             self.current_idx = 0
             self.main_label.config(image="", text="Папка пуста")
+            self.fname_label.config(text="")
         else:
             if self.current_idx >= len(self.files): self.current_idx = len(self.files) - 1
             self.selected_indices = {self.current_idx}
@@ -279,9 +348,7 @@ class PhotoSorterApp:
     def on_settings_changed(self, new_config):
         self.config = new_config
         self.engine.current_source = self.config.get('source', '')
-        self.current_idx = 0
-        self.files = []
-        self.history = [] # Чистим историю при смене папки
+        self.current_idx, self.files, self.history = 0, [], []
         self.engine.clear_cache()
         self.filmstrip._clear_all()
         self.root.update_idletasks()
@@ -289,17 +356,14 @@ class PhotoSorterApp:
         threading.Thread(target=self._async_load_files, daemon=True).start()
 
     def refresh_buttons(self):
-        for widget in self.btns_container.winfo_children():
-            widget.destroy()
-        
-        has_paths = any(self.config.get(f"dest{i}") for i in range(1, 7))
-        if has_paths:
+        for widget in self.btns_container.winfo_children(): widget.destroy()
+        if any(self.config.get(f"dest{i}") for i in range(1, 7)):
             tk.Label(self.btns_container, text="В папку:", bg="#eeeeee", font=("Arial", 9, "bold")).pack(side=tk.LEFT, padx=5)
             for i in range(1, 7):
                 path = self.config.get(f"dest{i}", "")
                 if path:
-                    folder_name = os.path.basename(path.rstrip(os.sep))
-                    btn = tk.Button(self.btns_container, text=f"{i}: {folder_name}", padx=8,
+                    name = os.path.basename(path.rstrip(os.sep))
+                    btn = tk.Button(self.btns_container, text=f"{i}: {name}", padx=8,
                                     command=lambda x=i: self.move_action(x), font=("Arial", 9, "bold"),
                                     bg="#ffffff", relief=tk.GROOVE)
                     btn.pack(side=tk.LEFT, padx=2)
@@ -311,16 +375,5 @@ class PhotoSorterApp:
 
     def on_app_closing(self):
         fnames = list(self.engine.rotation_map.keys())
-        for f in fnames:
-            self.engine.save_rotation_to_disk(f)
+        for f in fnames: self.engine.save_rotation_to_disk(f)
         self.root.destroy()
-
-    def _check_queue(self):
-        updated = False
-        while not self.engine.result_queue.empty():
-            try:
-                self.engine.result_queue.get_nowait()
-                updated = True
-            except: break
-        if updated: self.filmstrip.refresh(self.files, self.current_idx, self.selected_indices, self.root.winfo_width())
-        self.root.after(100, self._check_queue)
