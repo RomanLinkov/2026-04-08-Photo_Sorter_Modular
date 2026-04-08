@@ -10,8 +10,6 @@ __pycache__/
 # Настройки и документация
 photo_sorter_settings.json
 build/
-dist/
-*.exe
 PhotoSorterPro.spec
 PhotoSorterPro_2.0.spec
 
