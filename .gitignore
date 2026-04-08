@@ -1,5 +1,18 @@
-pycache/
-build/
+# Папки кэша и мусора (со слешем в конце)
+/.photo_cache/
+/.photo_trash/
+
+# Системные папки Python
 __pycache__/
+*.py[cod]
+*$py.class
+
+# Настройки и документация
 photo_sorter_settings.json
+build/
+dist/
+*.exe
+
+# Личные заметки
 all_modules.md
+LOGIC.md
