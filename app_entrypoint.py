@@ -1,6 +1,10 @@
 import tkinter as tk
 import sys
 import os
+from pillow_heif import register_heif_opener
+
+# Регистрируем поддержку HEIC для Pillow
+register_heif_opener()
 
 # Корректная работа путей внутри EXE
 if getattr(sys, 'frozen', False):

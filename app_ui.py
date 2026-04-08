@@ -395,6 +395,20 @@ class PhotoSorterApp:
         self.filmstrip.refresh(self.files, self.current_idx, self.selected_indices, self.root.winfo_width())
 
     def on_app_closing(self):
-        fnames = list(self.engine.rotation_map.keys())
-        for f in fnames: self.engine.save_rotation_to_disk(f)
-        self.root.destroy()
+        """Экстренное и полное завершение всех процессов"""
+        try:
+            # 1. Останавливаем движок
+            self.engine.stop_engine()
+            
+            # 2. Сохраняем последние повороты (быстро)
+            fnames = list(self.engine.rotation_map.keys())
+            for f in fnames:
+                self.engine.save_rotation_to_disk(f)
+        except:
+            pass
+        finally:
+            # 3. Убиваем окно
+            self.root.destroy()
+            # 4. САМОЕ ВАЖНОЕ: Полный выход из Python
+            # Это мгновенно прибьет все зависшие фоновые потоки
+            os._exit(0) 

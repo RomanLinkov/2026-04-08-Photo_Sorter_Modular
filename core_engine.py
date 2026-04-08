@@ -53,6 +53,10 @@ class PhotoEngine:
             # Постепенно наполняем пул потоков
             self.executor.submit(self._proc_thumb, fname)
 
+    def stop_engine(self):
+        """Останавливает пул потоков немедленно"""
+        # shutdown(wait=False) говорит потокам "бросайте всё"
+        self.executor.shutdown(wait=False, cancel_futures=True)
 
 
     def _proc_thumb(self, fname):

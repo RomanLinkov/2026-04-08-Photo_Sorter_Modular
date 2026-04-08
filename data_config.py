@@ -9,6 +9,7 @@ TRASH_DIR = ".photo_trash" # Папка для временного хранен
 THUMB_SIZE = 160
 EXTENSIONS = ('.jpg', '.jpeg', '.png', '.bmp', '.webp', '.heic', '.heif')
 
+
 # Оптимальное кол-во потоков
 MAX_WORKERS = multiprocessing.cpu_count() + 2
 
