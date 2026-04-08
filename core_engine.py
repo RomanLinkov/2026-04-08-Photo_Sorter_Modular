@@ -4,7 +4,7 @@ import queue
 import hashlib
 from concurrent.futures import ThreadPoolExecutor
 from PIL import Image, ImageTk, ImageOps
-from data_config import THUMB_SIZE, EXTENSIONS, MAX_WORKERS, CACHE_DIR, ensure_cache_dir
+from data_config import THUMB_SIZE, EXTENSIONS, MAX_WORKERS, CACHE_DIR, ensure_dirs
 
 class PhotoEngine:
     def __init__(self):
@@ -14,7 +14,7 @@ class PhotoEngine:
         self.result_queue = queue.Queue()
         self.executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)
         self.rotation_map = {}  # Храним углы поворота {имя_файла: угол}
-        ensure_cache_dir()
+        ensure_dirs() # Создаем .photo_cache и .photo_trash
 
     def get_file_list(self, source_dir):
         if not source_dir or not os.path.exists(source_dir): 
@@ -63,7 +63,7 @@ class PhotoEngine:
                     img.thumbnail((THUMB_SIZE, THUMB_SIZE), Image.Resampling.LANCZOS)
                     img.save(cache_path, "PNG")
             
-            # ПРИМЕНЯЕМ ПОВОРОТ ИЗ ПАМЯТИ
+            # Применяем поворот из памяти для ленты
             angle = self.rotation_map.get(fname, 0)
             if angle != 0:
                 img = img.rotate(angle, expand=True)
@@ -79,7 +79,7 @@ class PhotoEngine:
             if img: img.close()
 
     def rotate_in_memory(self, fname):
-        """Меняет угол поворота только в памяти для мгновенного отклика"""
+        """Мгновенный поворот в памяти"""
         current_angle = self.rotation_map.get(fname, 0)
         new_angle = (current_angle - 90) % 360
         self.rotation_map[fname] = new_angle
@@ -88,14 +88,13 @@ class PhotoEngine:
         return new_angle
 
     def save_rotation_to_disk(self, fname):
-        """Физическое сохранение на диск. Вызываем через executor."""
-        # Получаем угол и СРАЗУ удаляем из карты, чтобы не сохранять дважды
+        """Физическая запись на диск. Вызывается в фоне."""
         angle = self.rotation_map.pop(fname, 0)
         if angle == 0: return 
         
         path = os.path.join(self.current_source, fname)
         try:
-            # Даем файлу 0.1 сек "отдохнуть" (на случай если он еще читается)
+            # Небольшая пауза, чтобы файл освободился GUI-потоком
             import time
             time.sleep(0.1)
             
@@ -104,16 +103,12 @@ class PhotoEngine:
                 rotated = img.rotate(angle, expand=True)
                 rotated.save(path, quality=95, subsampling=0)
             
-            # Чистим кэш превью
             cache_path = self._get_cache_path(fname)
             if os.path.exists(cache_path): 
                 try: os.remove(cache_path)
                 except: pass
-            print(f"Файл {fname} успешно сохранен с поворотом {angle}")
         except Exception as e:
-            print(f"Ошибка физического сохранения {fname}: {e}")
-
-
+            print(f"Ошибка сохранения {fname}: {e}")
 
     def clear_cache(self, filenames=None):
         with self.lock:

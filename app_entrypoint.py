@@ -12,15 +12,15 @@ sys.path.append(basedir)
 # Импорты наших модулей
 from app_ui import SetupWindow, PhotoSorterApp
 from core_engine import PhotoEngine
-from data_config import load_settings, ensure_cache_dir
+from data_config import load_settings, ensure_dirs
 
 def start_main(config):
     """Запуск основного приложения после настройки"""
-    # Очищаем временные виджеты
+    # Очищаем все временные виджеты (окна настройки и т.д.)
     for w in root.winfo_children():
         w.destroy()
     
-    # Разворачиваем окно
+    # Показываем и разворачиваем окно
     root.deiconify()
     try:
         root.state('zoomed')
@@ -29,12 +29,12 @@ def start_main(config):
     
     root.update()
     
-    # Запускаем приложение
+    # Запускаем само приложение
     PhotoSorterApp(root, config, engine)
 
 if __name__ == "__main__":
-    # Создаем папку кэша перед стартом
-    ensure_cache_dir()
+    # Подготовка системных папок (.photo_cache и .photo_trash)
+    ensure_dirs()
     
     root = tk.Tk()
     root.title("Photo Sorter Pro")
@@ -43,7 +43,7 @@ if __name__ == "__main__":
     engine = PhotoEngine()
     config = load_settings()
 
-    # Если настроек нет или путь к источнику пуст — открываем Setup
+    # Проверяем настройки. Если источника нет — сначала окно Setup.
     if not config or not config.get("source") or not os.path.exists(config.get("source")):
         root.withdraw()
         SetupWindow(root, start_main)

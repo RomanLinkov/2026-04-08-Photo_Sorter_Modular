@@ -3,12 +3,12 @@ import os
 import multiprocessing
 
 SETTINGS_FILE = "photo_sorter_settings.json"
-# Папка для хранения кэша миниатюр на диске
 CACHE_DIR = ".photo_cache"
+TRASH_DIR = ".photo_trash" # Папка для временного хранения удаленных фото
 THUMB_SIZE = 160
 EXTENSIONS = ('.jpg', '.jpeg', '.png', '.bmp', '.webp', '.heic', '.heif')
 
-# Оптимальное кол-во потоков: число ядер процессора + 2
+# Оптимальное кол-во потоков
 MAX_WORKERS = multiprocessing.cpu_count() + 2
 
 def save_settings(settings):
@@ -24,9 +24,11 @@ def load_settings():
             return None
     return None
 
-def ensure_cache_dir():
-    if not os.path.exists(CACHE_DIR):
-        try:
-            os.makedirs(CACHE_DIR)
-        except:
-            pass
+def ensure_dirs():
+    """Создает все системные папки при запуске"""
+    for d in [CACHE_DIR, TRASH_DIR]:
+        if not os.path.exists(d):
+            try:
+                os.makedirs(d)
+            except:
+                pass

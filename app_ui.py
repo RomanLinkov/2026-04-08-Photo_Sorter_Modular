@@ -4,7 +4,7 @@ from tkinter import filedialog, messagebox
 from PIL import Image, ImageTk, ImageOps
 import os
 import shutil
-from data_config import save_settings, load_settings, THUMB_SIZE
+from data_config import save_settings, load_settings, THUMB_SIZE, TRASH_DIR
 from app_filmstrip import PhotoFilmstrip
 
 class SetupWindow(tk.Toplevel):
@@ -47,6 +47,7 @@ class PhotoSorterApp:
         self.selected_indices = {0}
         self.files = []
         self.current_photo_tk = None
+        self.history = [] # Стек для отмены действий (Undo)
         
         self.engine.current_source = self.config.get('source', '')
         
@@ -79,6 +80,7 @@ class PhotoSorterApp:
         self.btn_l.pack(side=tk.LEFT, padx=10)
         
         tk.Button(self.btn_l, text="⚙", font=("Arial", 12), width=3, command=self.open_settings, bg="#e0e0e0").pack(side=tk.LEFT, padx=5)
+        tk.Button(self.btn_l, text="⤺ Undo", command=self.undo_last_action, bg="#fff3e0").pack(side=tk.LEFT, padx=5)
         tk.Button(self.btn_l, text="◀", width=5, command=lambda: self.navigate(-1)).pack(side=tk.LEFT, padx=2)
         tk.Button(self.btn_l, text="▶", width=5, command=lambda: self.navigate(1)).pack(side=tk.LEFT, padx=2)
         tk.Button(self.btn_l, text="↩ Поворот (R)", command=self.rotate_current).pack(side=tk.LEFT, padx=10)
@@ -87,20 +89,36 @@ class PhotoSorterApp:
         self.btn_r = tk.Frame(self.ctrl, bg="#eeeeee")
         self.btn_r.pack(side=tk.RIGHT, padx=10)
         
-        # Контейнер для динамических кнопок папок
         self.btns_container = tk.Frame(self.btn_r, bg="#eeeeee")
         self.btns_container.pack(side=tk.LEFT)
         
         self.refresh_buttons()
 
     def _bind_keys(self):
+        # Стрелки навигации
         self.root.bind("<Left>", lambda e: self.navigate(-1))
         self.root.bind("<Right>", lambda e: self.navigate(1))
+        
+        # Удаление
         self.root.bind("<Delete>", lambda e: self.delete_files())
+        
+        # Универсальная привязка Ctrl+Z (Отмена)
+        # Привязываем к латинской 'z' в обоих регистрах. 
+        # В большинстве систем Windows это перехватывает нажатие и в русской раскладке.
+        self.root.bind("<Control-z>", lambda e: self.undo_last_action())
+        self.root.bind("<Control-Z>", lambda e: self.undo_last_action())
+        
+        # Поворот (поддержка обеих раскладок)
         self.root.bind("r", lambda e: self.rotate_current())
+        self.root.bind("R", lambda e: self.rotate_current())
         self.root.bind("к", lambda e: self.rotate_current())
+        self.root.bind("К", lambda e: self.rotate_current())
+        
+        # Цифровые клавиши 1-6 для перемещения
         for i in range(1, 7):
             self.root.bind(str(i), lambda e, x=i: self.move_action(x))
+            
+        # Отслеживание изменения размера окна
         self.root.bind("<Configure>", lambda e: self.root.after(100, self.refresh_ui) if e.widget == self.root else None)
 
     def _async_load_files(self):
@@ -119,6 +137,31 @@ class PhotoSorterApp:
             self.current_idx = 0
             self.selected_indices = {0}
             self.refresh_ui()
+
+    def undo_last_action(self):
+        if not self.history:
+            return
+            
+        action = self.history.pop()
+        restored = []
+        
+        for old_path, new_path, fname in action['items']:
+            try:
+                if os.path.exists(new_path):
+                    shutil.move(new_path, old_path)
+                    restored.append(fname)
+            except Exception as e:
+                print(f"Undo error {fname}: {e}")
+        
+        if restored:
+            self.files.extend(restored)
+            self.files.sort()
+            try:
+                self.current_idx = self.files.index(restored[0])
+            except:
+                self.current_idx = 0
+            self.selected_indices = {self.current_idx}
+            self._after_file_list_change()
 
     def _save_previous_rotations(self):
         fnames = list(self.engine.rotation_map.keys())
@@ -178,25 +221,45 @@ class PhotoSorterApp:
     def move_action(self, folder_num):
         dest_path = self.config.get(f"dest{folder_num}")
         if not dest_path or not self.files: return
+        
         to_move = [self.files[i] for i in sorted(self.selected_indices, reverse=True) if i < len(self.files)]
+        history_item = {'type': 'move', 'items': []}
+
         for fname in to_move:
+            src = os.path.join(self.config['source'], fname)
+            dst = os.path.join(dest_path, fname)
             try:
                 self.engine.save_rotation_to_disk(fname)
-                shutil.move(os.path.join(self.config['source'], fname), os.path.join(dest_path, fname))
+                shutil.move(src, dst)
+                history_item['items'].append((src, dst, fname))
                 self.files.remove(fname)
             except: pass
+        
+        if history_item['items']:
+            self.history.append(history_item)
         self._after_file_list_change()
 
     def delete_files(self):
         if not self.selected_indices or not self.files: return
-        if not messagebox.askyesno("Удаление", "Удалить выбранные?"): return
+        
         to_delete = [self.files[i] for i in sorted(self.selected_indices, reverse=True) if i < len(self.files)]
+        trash_path = os.path.abspath(TRASH_DIR)
+        if not os.path.exists(trash_path): os.makedirs(trash_path)
+        
+        history_item = {'type': 'delete', 'items': []}
+
         for fname in to_delete:
+            src = os.path.join(self.config['source'], fname)
+            dst = os.path.join(trash_path, fname)
             try:
                 self.engine.clear_cache([fname])
-                os.remove(os.path.join(self.config['source'], fname))
+                shutil.move(src, dst)
+                history_item['items'].append((src, dst, fname))
                 self.files.remove(fname)
             except: pass
+            
+        if history_item['items']:
+            self.history.append(history_item)
         self._after_file_list_change()
 
     def _after_file_list_change(self):
@@ -218,6 +281,7 @@ class PhotoSorterApp:
         self.engine.current_source = self.config.get('source', '')
         self.current_idx = 0
         self.files = []
+        self.history = [] # Чистим историю при смене папки
         self.engine.clear_cache()
         self.filmstrip._clear_all()
         self.root.update_idletasks()
