@@ -13,6 +13,7 @@ __pycache__/
 photo_sorter_settings.json
 build/
 *.spec
+admin_generator.py
 
 # Личные заметки
 all_modules.md
