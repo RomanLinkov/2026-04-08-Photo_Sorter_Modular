@@ -3,6 +3,12 @@
 /.photo_trash/
 dist/.photo_cache/
 dist/.photo_trash/
+dist/app_entrypoint.py
+dist/app_filmstrip.py
+dist/app_ui.py
+dist/core_engine.py
+dist/data_config.py
+dist/pyarmor_runtime_000000/
 
 # Системные папки Python
 __pycache__/
@@ -14,6 +20,7 @@ photo_sorter_settings.json
 build/
 *.spec
 admin_generator.py
+collect_to_pdf.py
 
 # Личные заметки
 all_modules.md

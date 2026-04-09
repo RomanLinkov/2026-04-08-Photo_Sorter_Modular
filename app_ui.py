@@ -13,19 +13,28 @@ class SetupWindow(tk.Toplevel):
         self.on_success = on_success
         self.title("Настройка путей")
         self.geometry("650x480")
-        self.grab_set() 
+        self.grab_set()
+
+        # --- ДОБАВЛЕНО: Принудительный выход при закрытии на крестик ---
+        self.protocol("WM_DELETE_WINDOW", self.force_close_app)
         
         saved = load_settings() or {}
-        self.paths = {k: tk.StringVar(value=saved.get(k, "")) 
-                     for k in ["source"] + [f"dest{i}" for i in range(1, 7)]}
+        self.paths = {k: tk.StringVar(value=saved.get(k, ""))
+                      for k in ["source"] + [f"dest{i}" for i in range(1, 7)]}
 
         for k, txt in [("source", "ИСТОЧНИК:")] + [(f"dest{i}", f"Папка {i}:") for i in range(1, 7)]:
             f = tk.Frame(self); f.pack(fill=tk.X, padx=15, pady=6)
             tk.Label(f, text=txt, width=15, anchor="w", font=("Arial", 9, "bold")).pack(side=tk.LEFT)
             tk.Entry(f, textvariable=self.paths[k], bg="#f9f9f9").pack(side=tk.LEFT, expand=True, fill=tk.X, padx=5)
             tk.Button(f, text="Обзор", command=lambda x=k: self.browse(x)).pack(side=tk.RIGHT)
-        
-        tk.Button(self, text="СОХРАНИТЬ", bg="#2e7d32", fg="white", font=("Arial", 11, "bold"), command=self.finish).pack(pady=20)
+
+        tk.Button(self, text="СОХРАНИТЬ", bg="#2e7d32", fg="white", 
+                  font=("Arial", 11, "bold"), command=self.finish).pack(pady=20)
+
+    # Функция для полной остановки процесса
+    def force_close_app(self):
+        self.destroy()
+        os._exit(0) # Гарантированно убивает процесс со всеми потоками
 
     def browse(self, key):
         self.grab_release()
