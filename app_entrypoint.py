@@ -33,15 +33,17 @@ def generate_key(hwid):
     raw_string = f"{hwid}-{secret_salt}"
     return hashlib.sha256(raw_string.encode()).hexdigest()
 
+
 def check_license_gui():
     current_hwid = get_hwid()
     valid_key = generate_key(current_hwid)
 
-    # Определение путей
     if getattr(sys, 'frozen', False):
         base_path = os.path.dirname(sys.executable)
+        static_path = sys._MEIPASS # Путь для временных файлов внутри EXE
     else:
         base_path = os.path.dirname(os.path.abspath(__file__))
+        static_path = base_path
 
     license_path = os.path.join(base_path, "license.txt")
     status = {"activated": False}
@@ -83,26 +85,25 @@ def check_license_gui():
         act_win.clipboard_append("roman.linkov@vk.com")
         btn_copy_mail.config(text="✅", fg="#55ff55")
 
-    # Сначала проверяем существующий файл
+    # Проверка лицензии
     try:
         if os.path.exists(license_path):
             with open(license_path, "r") as f:
                 if f.read().strip() == valid_key:
                     return True
-    except: 
-        pass
+    except: pass
 
     # --- ИНТЕРФЕЙС ОКНА ---
     act_win = tk.Tk()
     act_win.title("Активация Photo Sorter Pro")
-    act_win.geometry("550x850")
+    act_win.geometry("550x850") # Высота 850, чтобы всё влезло
     act_win.configure(bg="#1e1e1e")
     act_win.resizable(False, False)
 
     tk.Label(act_win, text="ЛИЦЕНЗИЯ НЕ НАЙДЕНА", fg="#ff5555", bg="#1e1e1e",
              font=("Arial", 18, "bold")).pack(pady=20)
 
-    # 1. Блок HWID (ID оборудования)
+    # 1. Блок HWID
     tk.Label(act_win, text="Ваш ID оборудования:", fg="#aaaaaa", bg="#1e1e1e").pack()
     id_entry = tk.Entry(act_win, justify='center', font=("Consolas", 14, "bold"),
                         fg="#ffff00", bg="black", readonlybackground="black", relief="flat")
@@ -116,14 +117,12 @@ def check_license_gui():
 
     tk.Frame(act_win, height=1, bg="#444444").pack(fill='x', padx=50, pady=20)
 
-    # 2. Блок Контактов (теперь выше ввода ключа)
+    # 2. Текст с вашей фразой
     tk.Label(act_win, 
-            text="Чтобы получить ключ активации, скопируйте ID оборудования\n(указан выше) и отправьте его автору удобным для вас способом:", 
-            fg="white", 
-            bg="#1e1e1e", 
-            font=("Arial", 11),
-            justify="center").pack(pady=15)
+             text="Чтобы получить ключ активации, скопируйте ID оборудования\n(указан выше) и отправьте его автору удобным для вас способом:", 
+             fg="white", bg="#1e1e1e", font=("Arial", 11), justify="center").pack(pady=10)
 
+    # Кнопки связи
     tk.Button(act_win, text="Telegram: @ROMAN_LINKOV95", fg="#55aaff", bg="#1e1e1e",
               font=("Arial", 12, "underline"), relief="flat", cursor="hand2", 
               command=lambda: webbrowser.open("https://t.me")).pack()
@@ -135,28 +134,24 @@ def check_license_gui():
     # Email
     email_frame = tk.Frame(act_win, bg="#1e1e1e")
     email_frame.pack(pady=10)
-    tk.Label(email_frame, text="Email: roman.linkov@vk.com", fg="#aaaaaa", bg="#1e1e1e",
-             font=("Arial", 11)).pack(side="left")
-    btn_copy_mail = tk.Button(email_frame, text="📋", command=do_copy_email,
-                              bg="#333333", fg="white", relief="flat", font=("Arial", 8))
+    tk.Label(email_frame, text="Email: roman.linkov@vk.com", fg="#aaaaaa", bg="#1e1e1e", font=("Arial", 11)).pack(side="left")
+    btn_copy_mail = tk.Button(email_frame, text="📋", command=do_copy_email, bg="#333333", fg="white", relief="flat", font=("Arial", 8))
     btn_copy_mail.pack(side="left", padx=10)
 
-    # QR-код
+    # 3. QR-КОД (Тут он точно не потеряется)
     try:
-        qr_path = os.path.join(sys._MEIPASS if getattr(sys, 'frozen', False) else
-                               os.path.dirname(os.path.abspath(__file__)), "tg_qr.png")
+        qr_path = os.path.join(static_path, "tg_qr.png")
         if os.path.exists(qr_path):
             img = Image.open(qr_path)
             img.thumbnail((180, 180), Image.Resampling.LANCZOS)
             qr_img = ImageTk.PhotoImage(img)
             qr_label = tk.Label(act_win, image=qr_img, bg="#1e1e1e")
-            qr_label.image = qr_img
+            qr_label.image = qr_img # Чтобы Garbage Collector не удалил картинку
             qr_label.pack(pady=15)
-    except: 
-        pass
+    except: pass
 
-    # 3. Блок ввода ключа (в самом конце)
-    tk.Frame(act_win, height=1, bg="#444444").pack(fill='x', padx=50, pady=20)
+    # 4. Блок ввода лицензии (ФИНАЛЬНЫЙ)
+    tk.Frame(act_win, height=1, bg="#444444").pack(fill='x', padx=50, pady=15)
     
     tk.Label(act_win, text="Введите ключ активации:", fg="#55ff55", bg="#1e1e1e",
              font=("Arial", 11, "bold")).pack(pady=5)
@@ -164,24 +159,17 @@ def check_license_gui():
     key_frame = tk.Frame(act_win, bg="#1e1e1e")
     key_frame.pack(pady=5, padx=50, fill='x')
 
-    key_entry = tk.Entry(key_frame, justify='center', font=("Consolas", 10), fg="white",
-                         bg="#333333", relief="flat")
+    key_entry = tk.Entry(key_frame, justify='center', font=("Consolas", 10), fg="white", bg="#333333", relief="flat")
     key_entry.pack(side="left", fill='x', expand=True, padx=(0, 5))
 
-    btn_clear = tk.Button(key_frame, text="✖", command=do_clear_key, bg="#444444",
-                          fg="white", font=("Arial", 8), relief="flat", padx=5)
-    btn_clear.pack(side="right", padx=2)
+    btn_paste = tk.Button(key_frame, text="📋 ВСТАВИТЬ", command=do_paste_key, bg="#444444", fg="white", font=("Arial", 8, "bold"), relief="flat", padx=10)
+    btn_paste.pack(side="right")
 
-    btn_paste = tk.Button(key_frame, text="📋 ВСТАВИТЬ", command=do_paste_key,
-                          bg="#444444", fg="white", font=("Arial", 8, "bold"), relief="flat", padx=10)
-    btn_paste.pack(side="right", padx=2)
-
-    btn_activate = tk.Button(act_win, text="АКТИВИРОВАТЬ ПРОГРАММУ",
-                             command=verify_and_save,
+    btn_activate = tk.Button(act_win, text="АКТИВИРОВАТЬ ПРОГРАММУ", command=verify_and_save,
                              bg="#1a5a1a", fg="white", font=("Arial", 11, "bold"), relief="flat")
     btn_activate.pack(pady=10, padx=50, fill='x')
 
-    # Центрирование и запуск
+    # Центрирование
     act_win.update_idletasks()
     x = (act_win.winfo_screenwidth() // 2) - (act_win.winfo_width() // 2)
     y = (act_win.winfo_screenheight() // 2) - (act_win.winfo_height() // 2)
@@ -189,7 +177,6 @@ def check_license_gui():
     
     act_win.protocol("WM_DELETE_WINDOW", lambda: os._exit(0))
     act_win.mainloop()
-    
     return status["activated"]
 
 
