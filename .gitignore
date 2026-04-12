@@ -22,6 +22,7 @@ build/
 dist/*.exe
 admin_generator.py
 collect_to_pdf.py
+license.txt
 
 # Личные заметки
 all_modules.md
