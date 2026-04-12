@@ -1,10 +1,20 @@
+import queue
+import sys
 import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox
 from PIL import Image, ImageTk, ImageOps
 import os
 import shutil
-from data_config import save_settings, load_settings, THUMB_SIZE, TRASH_DIR
+from data_config import APP_VERSION, save_settings, load_settings, THUMB_SIZE, TRASH_DIR
+
+# Физическая клавиша Z + Ctrl (любая раскладка): VK на Windows, типичные коды на macOS / X11
+if sys.platform == "darwin":
+    _UNDO_PHYS_KEYCODES = frozenset({6})
+elif sys.platform == "win32":
+    _UNDO_PHYS_KEYCODES = frozenset({90})
+else:
+    _UNDO_PHYS_KEYCODES = frozenset({52, 90, 6})
 from app_filmstrip import PhotoFilmstrip
 
 class SetupWindow(tk.Toplevel):
@@ -124,8 +134,7 @@ class PhotoSorterApp:
         self.root.bind("<Left>", lambda e: self.navigate(-1))
         self.root.bind("<Right>", lambda e: self.navigate(1))
         self.root.bind("<Delete>", lambda e: self.delete_files())
-        self.root.bind("<Control-z>", lambda e: self.undo_last_action())
-        self.root.bind("<Control-Z>", lambda e: self.undo_last_action())
+        self.root.bind("<Control-KeyPress>", self._undo_ctrl_keypress)
         self.root.bind("r", lambda e: self.rotate_current())
         self.root.bind("R", lambda e: self.rotate_current())
         self.root.bind("к", lambda e: self.rotate_current())
@@ -134,12 +143,19 @@ class PhotoSorterApp:
             self.root.bind(str(i), lambda e, x=i: self.move_action(x))
         self.root.bind("<Configure>", lambda e: self.root.after(100, self.refresh_ui) if e.widget == self.root else None)
 
+    def _undo_ctrl_keypress(self, event):
+        if not (event.state & 0x0004):
+            return
+        if event.keycode in _UNDO_PHYS_KEYCODES:
+            self.undo_last_action()
+            return "break"
+
     def _async_load_files(self):
         try:
             source = self.config.get('source', '')
             files = self.engine.get_file_list(source)
             self.root.after(0, self._on_files_loaded, files)
-        except:
+        except Exception:
             self.root.after(0, self._on_files_loaded, [])
 
     def _on_files_loaded(self, files):
@@ -171,7 +187,7 @@ class PhotoSorterApp:
             # Принудительно проталкиваем обновление заголовка и текста
             display_text = f"[{self.current_idx + 1} / {len(self.files)}] {self.files[self.current_idx]}"
             self.fname_label.config(text=display_text)
-            self.root.title(f"Photo Sorter Pro 2.1 | {display_text}")
+            self.root.title(f"Photo Sorter Pro {APP_VERSION} | {display_text}")
 
         # Убираем возможные "зависшие" надписи
         self.root.update_idletasks()
@@ -187,7 +203,8 @@ class PhotoSorterApp:
                 if os.path.exists(new_path):
                     shutil.move(new_path, old_path)
                     restored.append(fname)
-            except: pass
+            except OSError:
+                pass
         if restored:
             self.files.extend(restored)
             self.files.sort()
@@ -214,7 +231,7 @@ class PhotoSorterApp:
         # 1. Мгновенно обновляем текст и заголовок
         display_text = f"[{self.current_idx + 1} / {len(self.files)}] — {self.files[self.current_idx]}"
         self.fname_label.config(text=display_text)
-        self.root.title(f"Photo Sorter Pro 2.1 | {display_text}")
+        self.root.title(f"Photo Sorter Pro {APP_VERSION} | {display_text}")
 
         # 2. Обновляем ленту
         self.filmstrip.refresh(self.files, self.current_idx, self.selected_indices, self.root.winfo_width())
@@ -249,7 +266,8 @@ class PhotoSorterApp:
             try:
                 self.engine.result_queue.get_nowait()
                 updated = True
-            except: break
+            except queue.Empty:
+                break
         
         if updated: 
             self.filmstrip.refresh(self.files, self.current_idx, self.selected_indices, self.root.winfo_width())
@@ -257,8 +275,10 @@ class PhotoSorterApp:
         # 4. Прогресс-бар
         if self.files and self.root.winfo_width() > 10:
             progress = (self.current_idx + 1) / len(self.files)
-            try: self.prog_bar.config(width=int(self.root.winfo_width() * progress))
-            except: pass
+            try:
+                self.prog_bar.config(width=int(self.root.winfo_width() * progress))
+            except tk.TclError:
+                pass
 
         # Ставим интервал 50мс для максимальной отзывчивости
         self.root.after(50, self._check_queue)
@@ -297,7 +317,7 @@ class PhotoSorterApp:
         self.fname_label.config(text=display_text)
         
         # Заголовок окна теперь всегда чистый и статичный
-        self.root.title("Photo Sorter Pro 2.1")
+        self.root.title(f"Photo Sorter Pro {APP_VERSION}")
         
         # Очищаем текст в центре (чтобы не было дублей)
         self.main_label.config(text="") 
@@ -316,7 +336,7 @@ class PhotoSorterApp:
                     
                     # Устанавливаем фото, текст принудительно пустой
                     self.main_label.config(image=self.current_photo_tk, text="")
-            except:
+            except Exception:
                 self.main_label.config(text="Ошибка загрузки", image="")
         
         threading.Thread(target=load_full, daemon=True).start()
@@ -337,7 +357,8 @@ class PhotoSorterApp:
                 shutil.move(src, dst)
                 history_item['items'].append((src, dst, fname))
                 self.files.remove(fname)
-            except: pass
+            except OSError:
+                pass
         if history_item['items']: self.history.append(history_item)
         self._after_file_list_change()
 
@@ -356,7 +377,8 @@ class PhotoSorterApp:
                 shutil.move(src, dst)
                 history_item['items'].append((src, dst, fname))
                 self.files.remove(fname)
-            except: pass
+            except OSError:
+                pass
         if history_item['items']: self.history.append(history_item)
         self._after_file_list_change()
 
@@ -413,7 +435,7 @@ class PhotoSorterApp:
             fnames = list(self.engine.rotation_map.keys())
             for f in fnames:
                 self.engine.save_rotation_to_disk(f)
-        except:
+        except Exception:
             pass
         finally:
             # 3. Убиваем окно

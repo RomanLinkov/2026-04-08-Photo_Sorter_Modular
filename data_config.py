@@ -3,6 +3,8 @@ import os
 import multiprocessing
 import time
 
+APP_VERSION = "2.4.6"
+
 SETTINGS_FILE = "photo_sorter_settings.json"
 CACHE_DIR = ".photo_cache"
 TRASH_DIR = ".photo_trash" # Папка для временного хранения удаленных фото
@@ -22,7 +24,7 @@ def load_settings():
         try:
             with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
-        except: 
+        except (OSError, json.JSONDecodeError):
             return None
     return None
 
@@ -32,7 +34,7 @@ def ensure_dirs():
         if not os.path.exists(d):
             try:
                 os.makedirs(d)
-            except:
+            except OSError:
                 pass
 
 def get_dir_size(path):
@@ -43,7 +45,8 @@ def get_dir_size(path):
             for entry in it:
                 if entry.is_file():
                     total += entry.stat().size
-    except: pass
+    except OSError:
+        pass
     return total
 
 def cleanup_cache_smart(days_limit=7, max_gb=0.5):
@@ -74,7 +77,8 @@ def cleanup_cache_smart(days_limit=7, max_gb=0.5):
                     'size': stat.st_size
                 })
                 current_size += stat.st_size
-    except: return
+    except OSError:
+        return
 
     # 1. Удаляем файлы старше лимита по дням
     deleted_count = 0
@@ -86,7 +90,8 @@ def cleanup_cache_smart(days_limit=7, max_gb=0.5):
                 os.remove(item['path'])
                 current_size -= item['size']
                 deleted_count += 1
-            except: pass
+            except OSError:
+                pass
         else:
             remaining_files.append(item)
 
@@ -100,7 +105,8 @@ def cleanup_cache_smart(days_limit=7, max_gb=0.5):
                 os.remove(item['path'])
                 current_size -= item['size']
                 deleted_count += 1
-            except: pass
+            except OSError:
+                pass
             
             if current_size <= target_size:
                 break

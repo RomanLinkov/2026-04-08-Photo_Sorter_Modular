@@ -16,15 +16,38 @@ def get_encoded_salt():
     return base64.b64decode("TVlfU1VQRVJfU0VDUkVUX1BST0pFQ1RfMjAyNA==").decode()
 
 def get_hwid():
-    """Получение ЧИСТОГО ID процессора без заголовков"""
+    """ID процессора: wmic, при сбое — Get-CimInstance (без устаревшего wmic в новых Windows)."""
+    _no_window = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     try:
-        cmd = "wmic cpu get processorid"
-        output = subprocess.check_output(cmd, shell=True).decode()
-        # Убираем слово ProcessorId и все лишние пробелы/переносы
-        hwid = output.replace("ProcessorId", "").strip()
-        return hwid if hwid else "UNKNOWN_DEVICE"
-    except Exception:
-        return "UNKNOWN_DEVICE"
+        output = subprocess.check_output(
+            ["wmic", "cpu", "get", "processorid"],
+            stderr=subprocess.DEVNULL,
+            timeout=20,
+            creationflags=_no_window,
+        ).decode(errors="replace")
+        hwid = output.replace("ProcessorId", "").replace("\r", "").strip()
+        if hwid:
+            return hwid
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        pass
+    if sys.platform == "win32":
+        try:
+            out = subprocess.check_output(
+                [
+                    "powershell",
+                    "-NoProfile",
+                    "-Command",
+                    "(Get-CimInstance Win32_Processor).ProcessorId",
+                ],
+                stderr=subprocess.DEVNULL,
+                timeout=25,
+                creationflags=_no_window,
+            ).decode(errors="replace").strip()
+            if out:
+                return out
+        except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+            pass
+    return "UNKNOWN_DEVICE"
 
 
 def generate_key(hwid):
@@ -77,7 +100,7 @@ def check_license_gui():
             key_entry.delete(0, tk.END)
             key_entry.insert(0, content)
             btn_paste.config(text="✅", fg="#55ff55")
-        except:
+        except tk.TclError:
             messagebox.showerror("Ошибка", "Буфер обмена пуст!")
 
     def do_copy_email():
@@ -91,7 +114,8 @@ def check_license_gui():
             with open(license_path, "r") as f:
                 if f.read().strip() == valid_key:
                     return True
-    except: pass
+    except (OSError, UnicodeDecodeError):
+        pass
 
     # --- ИНТЕРФЕЙС ОКНА ---
     act_win = tk.Tk()
@@ -148,7 +172,8 @@ def check_license_gui():
             qr_label = tk.Label(act_win, image=qr_img, bg="#1e1e1e")
             qr_label.image = qr_img # Чтобы Garbage Collector не удалил картинку
             qr_label.pack(pady=15)
-    except: pass
+    except Exception:
+        pass
 
     # 4. Блок ввода лицензии (ФИНАЛЬНЫЙ)
     tk.Frame(act_win, height=1, bg="#444444").pack(fill='x', padx=50, pady=15)
@@ -193,7 +218,7 @@ sys.path.append(basedir)
 try:
     from app_ui import SetupWindow, PhotoSorterApp
     from core_engine import PhotoEngine
-    from data_config import load_settings, ensure_dirs, cleanup_cache_smart
+    from data_config import APP_VERSION, load_settings, ensure_dirs, cleanup_cache_smart
 except ImportError as e:
     print(f"Ошибка импорта: {e}")
 
@@ -203,7 +228,7 @@ def start_main(config, root, engine):
     root.deiconify()
     try:
         root.state('zoomed')
-    except:
+    except tk.TclError:
         root.geometry("1200x800")
     root.update()
     PhotoSorterApp(root, config, engine)
@@ -216,7 +241,7 @@ if __name__ == "__main__":
     cleanup_cache_smart(days_limit=7, max_gb=0.5)
     
     root = tk.Tk()
-    root.title("Photo Sorter Pro 2.4.5")
+    root.title(f"Photo Sorter Pro {APP_VERSION}")
     root.configure(bg="#121212")
 
     # --- ВОТ ЭТА ЧАСТЬ НУЖНА ДЛЯ ЧИСТОГО ВЫХОДА ---
@@ -224,7 +249,7 @@ if __name__ == "__main__":
         """Принудительно убивает процесс и все его фоновые потоки"""
         try:
             root.destroy()
-        except:
+        except tk.TclError:
             pass
         os._exit(0) # Команда ОС немедленно закрыть программу
 

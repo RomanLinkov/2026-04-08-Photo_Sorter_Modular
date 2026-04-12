@@ -23,7 +23,7 @@ class PhotoEngine:
         try:
             return sorted([f for f in os.listdir(self.current_source) 
                           if f.lower().endswith(EXTENSIONS)])
-        except:
+        except OSError:
             return []
 
     def _get_cache_path(self, fname):
@@ -76,10 +76,12 @@ class PhotoEngine:
                     with Image.open(cache_path) as cached_img:
                         img_to_show = cached_img.copy() # Копируем в память и СРАЗУ закрываем файл
                         img_to_show.load()
-                except:
+                except Exception:
                     img_to_show = None
-                    try: os.remove(cache_path)
-                    except: pass # Если файл занят, просто пропустим удаление в этот раз
+                    try:
+                        os.remove(cache_path)
+                    except OSError:
+                        pass
 
             # Если кэша нет - создаем
             if img_to_show is None:
@@ -130,8 +132,10 @@ class PhotoEngine:
             
             cache_path = self._get_cache_path(fname)
             if os.path.exists(cache_path): 
-                try: os.remove(cache_path)
-                except: pass
+                try:
+                    os.remove(cache_path)
+                except OSError:
+                    pass
         except Exception as e:
             print(f"Ошибка сохранения {fname}: {e}")
 
@@ -147,5 +151,5 @@ class PhotoEngine:
         try:
             # Обращаемся к внутренней очереди исполнителя
             return self.executor._work_queue.qsize()
-        except:
+        except (AttributeError, OSError):
             return 0
