@@ -1,6 +1,7 @@
 """Проверка лицензии и окно активации (HWID + ключ)."""
 import base64
 import hashlib
+import json
 import os
 import subprocess
 import sys
@@ -9,6 +10,88 @@ import tkinter as tk
 from tkinter import messagebox
 
 from PIL import Image, ImageTk
+
+
+def _crypt_value(val):
+    # Простейшая маскировка: число -> строка -> байты -> base64
+    s = f"secret_prefix_{val}_suffix"
+    return base64.b64encode(s.encode()).decode()
+
+def _decrypt_value(crypt_str):
+    try:
+        decoded = base64.b64decode(crypt_str.encode()).decode()
+        # Извлекаем число между префиксами
+        return int(decoded.split("_")[2])
+    except:
+        return 0
+
+def get_trial_actions_used():
+    path = _trial_state_path()
+    if not os.path.exists(path): return 0
+    try:
+        with open(path, "r") as f:
+            data = json.load(f)
+            return _decrypt_value(data.get("token", ""))
+    except:
+        return 0
+
+def add_trial_actions(n):
+    path = _trial_state_path()
+    used = get_trial_actions_used() + n
+    try:
+        with open(path, "w") as f:
+            # Сохраняем замаскированное значение
+            json.dump({"token": _crypt_value(used)}, f)
+    except OSError:
+        pass
+    return used
+
+
+def check_license_gui(*, trial_expired=False):
+    current_hwid = get_hwid()
+    valid_key = generate_key(current_hwid)
+    license_path, static_path = _license_paths()
+    status = {"activated": False, "continue_trial": False} # Добавляем флаг продолжения
+
+    def verify_and_save():
+        # ... (код верификации остается прежним из PDF стр. 13)
+        if entered_key == valid_key:
+            # ... сохранение ...
+            status["activated"] = True
+            act_win.destroy()
+
+    def continue_free():
+        status["continue_trial"] = True
+        act_win.destroy()
+
+    # --- Создание окна ---
+    act_win = tk.Tk()
+    # ... (настройки окна из PDF стр. 14) ...
+
+    # КНОПКА ПРОДОЛЖИТЬ (показываем, только если лимит не исчерпан)
+    used = get_trial_actions_used()
+    if used < FREE_ACTION_LIMIT:
+        remains = FREE_ACTION_LIMIT - used
+        btn_trial = tk.Button(
+            act_win, 
+            text=f"ПРОДОЛЖИТЬ ПРОБНЫЙ ПЕРИОД\n(осталось {remains} действий)", 
+            command=continue_free,
+            bg="#333333", fg="#00e5ff", font=("Arial", 11, "bold"), pady=10
+        )
+        btn_trial.pack(pady=10, padx=50, fill="x")
+    
+    # КНОПКА АКТИВАЦИИ (основная)
+    tk.Button(act_win, text="АКТИВИРОВАТЬ ПРОГРАММУ", command=verify_and_save,
+              bg="#1a5a1a", fg="white", font=("Arial", 11, "bold"), relief="flat").pack(
+              pady=10, padx=50, fill="x")
+
+    act_win.mainloop()
+    return status["activated"] or status["continue_trial"]
+
+
+# Сколько фото можно переместить/удалить без ключа, затем требуется активация
+FREE_ACTION_LIMIT = 1000
+_TRIAL_STATE_NAME = "photo_sorter_trial.json"
 
 
 def get_encoded_salt():
@@ -56,18 +139,101 @@ def generate_key(hwid):
     return hashlib.sha256(raw_string.encode()).hexdigest()
 
 
-def _license_paths():
+def _base_dir():
     if getattr(sys, "frozen", False):
-        base_path = os.path.dirname(sys.executable)
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+def _license_paths():
+    base_path = _base_dir()
+    if getattr(sys, "frozen", False):
         static_path = sys._MEIPASS
     else:
-        base_path = os.path.dirname(os.path.abspath(__file__))
         static_path = base_path
     license_path = os.path.join(base_path, "license.txt")
     return license_path, static_path
 
 
-def check_license_gui():
+def _trial_state_path():
+    return os.path.join(_base_dir(), _TRIAL_STATE_NAME)
+
+
+def is_license_valid():
+    license_path, _ = _license_paths()
+    current_hwid = get_hwid()
+    valid_key = generate_key(current_hwid)
+    try:
+        if os.path.exists(license_path):
+            with open(license_path, "r", encoding="utf-8") as f:
+                if f.read().strip() == valid_key:
+                    return True
+    except (OSError, UnicodeDecodeError):
+        pass
+    return False
+
+
+def get_trial_actions_used():
+    path = _trial_state_path()
+    if not os.path.exists(path):
+        return 0
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return int(data.get("actions_used", 0))
+    except (OSError, ValueError, json.JSONDecodeError, TypeError):
+        return 0
+
+
+def add_trial_actions(n):
+    """Учитывает успешно перемещённые/удалённые фото (без лицензии)."""
+    if n <= 0 or is_license_valid():
+        return get_trial_actions_used()
+    path = _trial_state_path()
+    used = get_trial_actions_used() + n
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"actions_used": used}, f, ensure_ascii=False, indent=2)
+    except OSError:
+        pass
+    return used
+
+
+def startup_license_gate():
+    """Перед главным окном: лицензия или триал < лимита, иначе окно активации."""
+    if is_license_valid():
+        return True
+    if get_trial_actions_used() < FREE_ACTION_LIMIT:
+        return True
+    return check_license_gui(trial_expired=False)
+
+
+
+def enforce_trial_before_action():
+    """Перед перемещением/удалением: если лимит уже исчерпан — только активация."""
+    if is_license_valid():
+        return True
+    if get_trial_actions_used() < FREE_ACTION_LIMIT:
+        return True
+    ok = check_license_gui(trial_expired=True)
+    if not ok:
+        os._exit(0)
+    return True
+
+
+def guard_after_photo_actions(committed_count):
+    """После успешных move/delete: учёт триала; при достижении лимита — окно активации."""
+    if committed_count <= 0:
+        return
+    if is_license_valid():
+        return
+    total = add_trial_actions(committed_count)
+    if total >= FREE_ACTION_LIMIT:
+        if not check_license_gui(trial_expired=True):
+            os._exit(0)
+
+
+def check_license_gui(*, trial_expired=False):
     current_hwid = get_hwid()
     valid_key = generate_key(current_hwid)
     license_path, static_path = _license_paths()
@@ -117,14 +283,28 @@ def check_license_gui():
     except (OSError, UnicodeDecodeError):
         pass
 
+    headline = (
+        "ЛИМИТ БЕСПЛАТНОЙ ОБРАБОТКИ ИСЧЕРПАН"
+        if trial_expired
+        else "ЛИЦЕНЗИЯ НЕ НАЙДЕНА"
+    )
+    sub = (
+        f"Обработано без ключа: {FREE_ACTION_LIMIT} фото. Введите ключ или купите лицензию."
+        if trial_expired
+        else ""
+    )
+
     act_win = tk.Tk()
     act_win.title("Активация Photo Sorter Pro")
     act_win.geometry("550x850")
     act_win.configure(bg="#1e1e1e")
     act_win.resizable(False, False)
 
-    tk.Label(act_win, text="ЛИЦЕНЗИЯ НЕ НАЙДЕНА", fg="#ff5555", bg="#1e1e1e",
-             font=("Arial", 18, "bold")).pack(pady=20)
+    tk.Label(act_win, text=headline, fg="#ff5555", bg="#1e1e1e",
+             font=("Arial", 16, "bold"), wraplength=500).pack(pady=20)
+    if sub:
+        tk.Label(act_win, text=sub, fg="#cccccc", bg="#1e1e1e",
+                 font=("Arial", 10), justify="center", wraplength=500).pack(pady=(0, 10))
 
     tk.Label(act_win, text="Ваш ID оборудования:", fg="#aaaaaa", bg="#1e1e1e").pack()
     id_entry = tk.Entry(act_win, justify="center", font=("Consolas", 14, "bold"),

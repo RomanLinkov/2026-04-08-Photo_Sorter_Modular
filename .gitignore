@@ -17,6 +17,7 @@ __pycache__/
 
 # Настройки и документация
 photo_sorter_settings.json
+photo_sorter_trial.json
 build/
 *.spec
 dist/*.exe

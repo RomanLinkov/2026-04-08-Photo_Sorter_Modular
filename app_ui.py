@@ -7,6 +7,13 @@ from PIL import Image, ImageTk, ImageOps
 import os
 import shutil
 from data_config import APP_VERSION, save_settings, load_settings, THUMB_SIZE, TRASH_DIR
+from license_check import (
+    FREE_ACTION_LIMIT,
+    enforce_trial_before_action,
+    get_trial_actions_used,
+    guard_after_photo_actions,
+    is_license_valid,
+)
 
 # Физическая клавиша Z + Ctrl (любая раскладка): VK на Windows, типичные коды на macOS / X11
 if sys.platform == "darwin":
@@ -93,9 +100,12 @@ class PhotoSorterApp:
                                     font=("Consolas", 10, "bold"))
         self.fname_label.pack(side=tk.LEFT, padx=10)
 
+        self.trial_badge = tk.Label(self.info_panel, text="", fg="#ffab40", bg="#1a1a1a",
+                                    font=("Consolas", 9, "bold"))
         self.cache_stat = tk.Label(self.info_panel, text="✓ READY", fg="#00e5ff", 
                                    bg="#1a1a1a", font=("Consolas", 9, "bold"), width=15)
         self.cache_stat.pack(side=tk.RIGHT, padx=10)
+        self.trial_badge.pack(side=tk.RIGHT, padx=8)
 
         # Главная область просмотра
         self.main_label = tk.Label(self.root, bg="#121212", text="") # Добавили text=""
@@ -129,6 +139,14 @@ class PhotoSorterApp:
         self.btns_container = tk.Frame(self.btn_r, bg="#eeeeee")
         self.btns_container.pack(side=tk.LEFT)
         self.refresh_buttons()
+        self._refresh_trial_badge()
+
+    def _refresh_trial_badge(self):
+        if is_license_valid():
+            self.trial_badge.config(text="")
+            return
+        used = get_trial_actions_used()
+        self.trial_badge.config(text=f"Бесплатно: {used}/{FREE_ACTION_LIMIT}")
 
     def _bind_keys(self):
         self.root.bind("<Left>", lambda e: self.navigate(-1))
@@ -167,6 +185,7 @@ class PhotoSorterApp:
             self.main_label.config(text="Папка пуста или не содержит фото", image="")
             self.fname_label.config(text="")
             self.filmstrip._clear_all()
+            self._refresh_trial_badge()
         else:
             # 1. Устанавливаем начальные индексы
             self.current_idx = 0
@@ -189,6 +208,7 @@ class PhotoSorterApp:
             self.fname_label.config(text=display_text)
             self.root.title(f"Photo Sorter Pro {APP_VERSION} | {display_text}")
 
+        self._refresh_trial_badge()
         # Убираем возможные "зависшие" надписи
         self.root.update_idletasks()
 
@@ -346,7 +366,9 @@ class PhotoSorterApp:
 
     def move_action(self, folder_num):
         dest_path = self.config.get(f"dest{folder_num}")
-        if not dest_path or not self.files: return
+        if not dest_path or not self.files:
+            return
+        enforce_trial_before_action()
         to_move = [self.files[i] for i in sorted(self.selected_indices, reverse=True) if i < len(self.files)]
         history_item = {'type': 'move', 'items': []}
         for fname in to_move:
@@ -359,12 +381,18 @@ class PhotoSorterApp:
                 self.files.remove(fname)
             except OSError:
                 pass
-        if history_item['items']: self.history.append(history_item)
+        if history_item['items']:
+            self.history.append(history_item)
+            guard_after_photo_actions(len(history_item['items']))
+            self._refresh_trial_badge()
         self._after_file_list_change()
 
     def delete_files(self):
-        if not self.selected_indices or not self.files: return
-        if not messagebox.askyesno("Удаление", "Удалить выбранные?"): return
+        if not self.selected_indices or not self.files:
+            return
+        if not messagebox.askyesno("Удаление", "Удалить выбранные?"):
+            return
+        enforce_trial_before_action()
         to_delete = [self.files[i] for i in sorted(self.selected_indices, reverse=True) if i < len(self.files)]
         trash_path = os.path.abspath(TRASH_DIR)
         if not os.path.exists(trash_path): os.makedirs(trash_path)
@@ -379,7 +407,10 @@ class PhotoSorterApp:
                 self.files.remove(fname)
             except OSError:
                 pass
-        if history_item['items']: self.history.append(history_item)
+        if history_item['items']:
+            self.history.append(history_item)
+            guard_after_photo_actions(len(history_item['items']))
+            self._refresh_trial_badge()
         self._after_file_list_change()
 
     def _after_file_list_change(self):

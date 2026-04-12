@@ -3,7 +3,7 @@ import sys
 import tkinter as tk
 from pillow_heif import register_heif_opener
 
-from license_check import check_license_gui
+from license_check import startup_license_gate
 
 register_heif_opener()
 
@@ -34,7 +34,7 @@ def start_main(config, root, engine):
 
 
 if __name__ == "__main__":
-    if not check_license_gui():
+    if not startup_license_gate():
         os._exit(0)
 
     ensure_dirs()
