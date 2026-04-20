@@ -1,4 +1,4 @@
-# Photo Sorter Pro v2.4.6 (Modular)
+# Photo Sorter Pro v2.4.7 (Modular)
 
 ![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue)
 ![Pillow](https://img.shields.io/badge/Pillow-10+-green)
@@ -15,7 +15,7 @@
 * **Кэш**: удаление неиспользуемого кэша (7 дней) и ограничение объёма (~500 МБ).
 * **Undo**: отмена перемещений и удалений через локальную корзину `.photo_trash`.
 * **Чистый выход**: остановка фоновых потоков при закрытии окна.
-* **Без лицензии**: можно перемещать и удалять до **1000** фотографий (счётчик в панели «Бесплатно: N/1000»), затем запрашивается активация. Файл учёта: `photo_sorter_trial.json` рядом с программой.
+* **Без лицензии**: можно перемещать и удалять до **1000** фотографий (счётчик в панели «Бесплатно: N/1000»), затем запрашивается активация. Счётчик хранится в реестре Windows (HKCU): `Software\PhotoSorterPro\PhotoSorterPro` → `ActionsUsed` (DWORD). Файлы рядом с `.exe` не создаются.
 
 ---
 
@@ -89,7 +89,7 @@ pyarmor gen -O armored app_entrypoint.py license_check.py app_ui.py app_filmstri
 
 ```bat
 pyinstaller --noconfirm --onefile --windowed --clean ^
-  --name PhotoSorterPro_2.4.6 ^
+  --name PhotoSorterPro_2.4.7 ^
   --icon=icon.ico ^
   --add-data "tg_qr.png;." ^
   --add-data "armored\pyarmor_runtime_000000;pyarmor_runtime_000000" ^
@@ -108,10 +108,10 @@ pyinstaller --noconfirm --onefile --windowed --clean ^
 **Одной строкой (после правки имени `pyarmor_runtime_*`):**
 
 ```bat
-pyinstaller --noconfirm --onefile --windowed --clean --name PhotoSorterPro_2.4.6 --icon=icon.ico --add-data "tg_qr.png;." --add-data "armored\pyarmor_runtime_000000;pyarmor_runtime_000000" --collect-submodules "tkinter" --hidden-import "tkinter.messagebox" --hidden-import "license_check" --hidden-import "app_ui" --hidden-import "app_filmstrip" --hidden-import "core_engine" --hidden-import "data_config" --hidden-import "pillow_heif" --hidden-import "PIL" armored\app_entrypoint.py
+pyinstaller --noconfirm --onefile --windowed --clean --name PhotoSorterPro_2.4.7 --icon=icon.ico --add-data "tg_qr.png;." --add-data "armored\pyarmor_runtime_000000;pyarmor_runtime_000000" --collect-submodules "tkinter" --hidden-import "tkinter.messagebox" --hidden-import "license_check" --hidden-import "app_ui" --hidden-import "app_filmstrip" --hidden-import "core_engine" --hidden-import "data_config" --hidden-import "pillow_heif" --hidden-import "PIL" armored\app_entrypoint.py
 ```
 
-Готовый файл: `dist\PhotoSorterPro_2.4.6.exe`.
+Готовый файл: `dist\PhotoSorterPro_2.4.7.exe`.
 
 **Сокращённый вариант** (если у вас PyInstaller сам подтягивает рантайм и модули — можно пробовать без `--add-data` рантайма и без части `hidden-import`; при ошибке импорта верните флаги по сообщению).
 
@@ -126,7 +126,7 @@ pyinstaller --noconfirm --onefile --windowed --clean --name PhotoSorterPro_2.4.6
 Для отладки можно собрать из исходников без обфускации:
 
 ```bat
-pyinstaller --noconfirm --onefile --windowed --clean --icon=icon.ico --name PhotoSorterPro_2.4.6 --add-data "tg_qr.png;." app_entrypoint.py
+pyinstaller --noconfirm --onefile --windowed --clean --icon=icon.ico --name PhotoSorterPro_2.4.7 --add-data "tg_qr.png;." app_entrypoint.py
 ```
 
 Релизы удобнее выкладывать как вложения к тегу в Git, а не хранить крупный бинарник в истории коммитов.
@@ -137,3 +137,19 @@ pyinstaller --noconfirm --onefile --windowed --clean --icon=icon.ico --name Phot
 pip install -r requirements.txt
 pytest -q
 ```
+
+
+---
+
+## 🔑 Лицензия и пробный лимит
+
+Без лицензии можно выполнить до **1000** действий (перемещение и удаление фото). Текущий счётчик отображается сверху: **«Бесплатно: N/1000»**.
+
+На Windows счётчик хранится в реестре (для текущего пользователя):
+
+- `HKCU\Software\PhotoSorterPro\PhotoSorterPro`
+  - `ActionsUsed` (DWORD)
+
+Файлы рядом с `.exe` для триала не создаются.
+
+---

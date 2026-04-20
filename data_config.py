@@ -3,7 +3,7 @@ import os
 import multiprocessing
 import time
 
-APP_VERSION = "2.4.6"
+APP_VERSION = "2.4.7"
 
 SETTINGS_FILE = "photo_sorter_settings.json"
 CACHE_DIR = ".photo_cache"

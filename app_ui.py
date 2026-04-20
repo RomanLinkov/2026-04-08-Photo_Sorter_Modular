@@ -9,10 +9,12 @@ import shutil
 from data_config import APP_VERSION, save_settings, load_settings, THUMB_SIZE, TRASH_DIR
 from license_check import (
     FREE_ACTION_LIMIT,
+    dev_set_trial_actions_used_for_testing,
     enforce_trial_before_action,
     get_trial_actions_used,
     guard_after_photo_actions,
     is_license_valid,
+    maybe_show_trial_offer_dialog,
 )
 
 # Физическая клавиша Z + Ctrl (любая раскладка): VK на Windows, типичные коды на macOS / X11
@@ -86,6 +88,19 @@ class PhotoSorterApp:
         
         threading.Thread(target=self._async_load_files, daemon=True).start()
         self._check_queue()
+        self.root.after(
+            400,
+            lambda: maybe_show_trial_offer_dialog(
+                self.root, on_after_activation=self._refresh_trial_badge
+            ),
+        )
+
+    def _dev_trial_reset_999(self):
+        if dev_set_trial_actions_used_for_testing(999):
+            self._refresh_trial_badge()
+            messagebox.showinfo(
+                "DEV", "Счётчик триала: 999 (осталось 1 действие)", parent=self.root
+            )
 
     def _init_ui(self):
         self.root.columnconfigure(0, weight=1)
@@ -105,6 +120,17 @@ class PhotoSorterApp:
         self.cache_stat = tk.Label(self.info_panel, text="✓ READY", fg="#00e5ff", 
                                    bg="#1a1a1a", font=("Consolas", 9, "bold"), width=15)
         self.cache_stat.pack(side=tk.RIGHT, padx=10)
+        if os.environ.get("PHOTOSORTER_DEV", "").strip() == "1":
+            tk.Button(
+                self.info_panel,
+                text="DEV→999",
+                command=self._dev_trial_reset_999,
+                bg="#553300",
+                fg="#ffcc00",
+                font=("Arial", 7, "bold"),
+                relief="flat",
+                padx=4,
+            ).pack(side=tk.RIGHT, padx=2)
         self.trial_badge.pack(side=tk.RIGHT, padx=8)
 
         # Главная область просмотра
@@ -368,7 +394,7 @@ class PhotoSorterApp:
         dest_path = self.config.get(f"dest{folder_num}")
         if not dest_path or not self.files:
             return
-        enforce_trial_before_action()
+        enforce_trial_before_action(master=self.root)
         to_move = [self.files[i] for i in sorted(self.selected_indices, reverse=True) if i < len(self.files)]
         history_item = {'type': 'move', 'items': []}
         for fname in to_move:
@@ -383,7 +409,7 @@ class PhotoSorterApp:
                 pass
         if history_item['items']:
             self.history.append(history_item)
-            guard_after_photo_actions(len(history_item['items']))
+            guard_after_photo_actions(len(history_item['items']), master=self.root)
             self._refresh_trial_badge()
         self._after_file_list_change()
 
@@ -392,7 +418,7 @@ class PhotoSorterApp:
             return
         if not messagebox.askyesno("Удаление", "Удалить выбранные?"):
             return
-        enforce_trial_before_action()
+        enforce_trial_before_action(master=self.root)
         to_delete = [self.files[i] for i in sorted(self.selected_indices, reverse=True) if i < len(self.files)]
         trash_path = os.path.abspath(TRASH_DIR)
         if not os.path.exists(trash_path): os.makedirs(trash_path)
@@ -409,7 +435,7 @@ class PhotoSorterApp:
                 pass
         if history_item['items']:
             self.history.append(history_item)
-            guard_after_photo_actions(len(history_item['items']))
+            guard_after_photo_actions(len(history_item['items']), master=self.root)
             self._refresh_trial_badge()
         self._after_file_list_change()
 
