@@ -78,6 +78,26 @@ def _trial_reg_key_path():
     return rf"Software\{_REG_VENDOR}\{_REG_APP}"
 
 
+def _ensure_trial_registry_initialized() -> bool:
+    """
+    Гарантирует, что ключ и значение счётчика существуют в HKCU.
+    Возвращает True, если реестр доступен для чтения/записи.
+    """
+    if sys.platform != "win32":
+        return False
+    try:
+        import winreg  # type: ignore
+
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, _trial_reg_key_path()) as k:
+            try:
+                winreg.QueryValueEx(k, _REG_VALUE_ACTIONS_USED)
+            except FileNotFoundError:
+                winreg.SetValueEx(k, _REG_VALUE_ACTIONS_USED, 0, winreg.REG_DWORD, 0)
+        return True
+    except OSError:
+        return False
+
+
 def _try_read_trial_actions_from_registry() -> int | None:
     if sys.platform != "win32":
         return None
@@ -140,8 +160,11 @@ def is_license_valid():
 
 def get_trial_actions_used():
     # Храним только в реестре (Windows HKCU). Никаких файлов рядом с exe.
+    if not _ensure_trial_registry_initialized():
+        return 0
     reg_val = _try_read_trial_actions_from_registry()
     if reg_val is None:
+        # ключ/значение могли не читаться из-за прав; безопасный дефолт
         return 0
     return max(0, int(reg_val))
 
@@ -153,12 +176,24 @@ def add_trial_actions(n):
     used = get_trial_actions_used() + n
 
     # Windows: пишем в реестр.
-    _try_write_trial_actions_to_registry(used)
+    if not _try_write_trial_actions_to_registry(used):
+        # Если реестр недоступен, не можем корректно вести триал-счётчик.
+        # Не молчим: иначе триал "никогда не кончается".
+        try:
+            messagebox.showerror(
+                "Ошибка",
+                "Не удалось сохранить счётчик пробного периода в реестр Windows.\n\n"
+                f"Проверьте права доступа к:\nHKCU\\{_trial_reg_key_path()}\n"
+                f"Значение: {_REG_VALUE_ACTIONS_USED}",
+            )
+        except Exception:
+            pass
     return used
 
 
 def startup_license_gate():
     """Перед главным окном: лицензия или триал < лимита, иначе окно активации."""
+    _ensure_trial_registry_initialized()
     if is_license_valid():
         return True
     if get_trial_actions_used() < FREE_ACTION_LIMIT:
